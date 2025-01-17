@@ -37,10 +37,9 @@ export function useTasks() {
   useEffect(() => {
     if (!user) return;
 
-    // Initial fetch
     fetchTasks();
 
-    // Set up real-time subscription
+    // Real-time subscription with batching
     const subscription = supabase
       .channel('tasks_changes')
       .on(
@@ -50,21 +49,7 @@ export function useTasks() {
           schema: 'public',
           table: 'tasks',
         },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setTasks(current => [...current, payload.new as Task]);
-          } else if (payload.eventType === 'UPDATE') {
-            setTasks(current =>
-              current.map(task =>
-                task.id === payload.new.id ? { ...task, ...payload.new } : task
-              )
-            );
-          } else if (payload.eventType === 'DELETE') {
-            setTasks(current =>
-              current.filter(task => task.id !== payload.old.id)
-            );
-          }
-        }
+        handleRealTimeUpdates
       )
       .subscribe();
 
@@ -73,18 +58,53 @@ export function useTasks() {
     };
   }, [user]);
 
-  const fetchTasks = async () => {
+  const handleRealTimeUpdates = (() => {
+    let updateQueue: any[] = [];
+    let timeout: NodeJS.Timeout | null = null;
+
+    const processQueue = () => {
+      const updates = [...updateQueue];
+      updateQueue = [];
+      updates.forEach((payload) => {
+        if (payload.eventType === 'INSERT') {
+          setTasks((current) => [...current, payload.new as Task]);
+        } else if (payload.eventType === 'UPDATE') {
+          setTasks((current) =>
+            current.map((task) =>
+              task.id === payload.new.id ? { ...task, ...payload.new } : task
+            )
+          );
+        } else if (payload.eventType === 'DELETE') {
+          setTasks((current) => current.filter((task) => task.id !== payload.old.id));
+        }
+      });
+    };
+
+    return (payload: any) => {
+      updateQueue.push(payload);
+      if (!timeout) {
+        timeout = setTimeout(() => {
+          processQueue();
+          timeout = null;
+        }, 500); // Process in batches every 500ms
+      }
+    };
+  })();
+
+  const fetchTasks = async (filters: Partial<TaskInput> = {}) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+      let query = supabase.from('tasks').select('*').order('created_at', { ascending: false });
+      if (filters.status) query = query.eq('status', filters.status);
+      if (filters.priority) query = query.eq('priority', filters.priority);
+      if (filters.assigned_to) query = query.eq('assigned_to', filters.assigned_to);
 
+      const { data, error } = await query;
       if (error) throw error;
-      setTasks(data);
+
+      setTasks(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? `Error fetching tasks: ${err.message}` : 'An unknown error occurred');
     } finally {
       setLoading(false);
     }
@@ -92,6 +112,16 @@ export function useTasks() {
 
   const createTask = async (taskInput: TaskInput) => {
     if (!user) throw new Error('User must be authenticated');
+
+    const tempTask: Task = {
+      ...taskInput,
+      id: `temp-${Date.now()}`,
+      created_by: user.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Task;
+
+    setTasks((current) => [tempTask, ...current]);
 
     try {
       const { data, error } = await supabase
@@ -106,14 +136,21 @@ export function useTasks() {
         .single();
 
       if (error) throw error;
+
+      setTasks((current) => current.map((task) => (task.id === tempTask.id ? data : task)));
       return data;
     } catch (err) {
-      throw err instanceof Error ? err : new Error('Failed to create task');
+      setTasks((current) => current.filter((task) => task.id !== tempTask.id));
+      throw err instanceof Error ? new Error(`Error creating task: ${err.message}`) : new Error('Failed to create task');
     }
   };
 
   const updateTask = async (id: string, updates: Partial<TaskInput>) => {
     try {
+      setTasks((current) =>
+        current.map((task) => (task.id === id ? { ...task, ...updates, updated_at: new Date().toISOString() } : task))
+      );
+
       const { data, error } = await supabase
         .from('tasks')
         .update(updates)
@@ -124,20 +161,20 @@ export function useTasks() {
       if (error) throw error;
       return data;
     } catch (err) {
-      throw err instanceof Error ? err : new Error('Failed to update task');
+      throw err instanceof Error ? new Error(`Error updating task with ID ${id}: ${err.message}`) : new Error('Failed to update task');
     }
   };
 
   const deleteTask = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', id);
+    const tempTasks = tasks;
+    setTasks((current) => current.filter((task) => task.id !== id));
 
+    try {
+      const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      throw err instanceof Error ? err : new Error('Failed to delete task');
+      setTasks(tempTasks);
+      throw err instanceof Error ? new Error(`Error deleting task with ID ${id}: ${err.message}`) : new Error('Failed to delete task');
     }
   };
 
@@ -148,6 +185,6 @@ export function useTasks() {
     createTask,
     updateTask,
     deleteTask,
-    refresh: fetchTasks,
+    fetchTasks,
   };
 }

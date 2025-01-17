@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import { 
-  AlertCircle, Loader2, Plus, Search, Filter, 
-  ArrowUpDown, MoreVertical, Check, X 
-} from 'lucide-react';
+import { AlertCircle, Loader2, Plus, Search, Filter } from 'lucide-react';
 import { useTasks, Task, TaskInput } from '../../hooks/useTasks';
 import { Modal } from '../common/Modal';
 
@@ -39,16 +36,25 @@ export function TasksDataTable() {
     setSubmitting(true);
 
     try {
+      // Validate required fields
+      if (!formData.title.trim()) {
+        throw new Error('Task title is required');
+      }
+
+      console.log('Submitting task:', formData);
+
       if (selectedTask) {
         await updateTask(selectedTask.id, formData);
       } else {
         await createTask(formData);
       }
+
       setShowAddModal(false);
       setShowEditModal(false);
       setFormData(initialFormData);
     } catch (err) {
       console.error('Failed to save task:', err);
+      alert(err instanceof Error ? err.message : 'Failed to save task');
     } finally {
       setSubmitting(false);
     }
@@ -76,10 +82,11 @@ export function TasksDataTable() {
       setSelectedTask(null);
     } catch (err) {
       console.error('Failed to delete task:', err);
+      alert('Failed to delete task');
     }
   };
 
-  const filteredTasks = tasks.filter(task =>
+  const filteredTasks = tasks.filter((task) =>
     task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -163,13 +170,9 @@ export function TasksDataTable() {
               {filteredTasks.map((task) => (
                 <tr key={task.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {task.title}
-                    </div>
+                    <div className="text-sm font-medium text-gray-900">{task.title}</div>
                     {task.description && (
-                      <div className="text-sm text-gray-500">
-                        {task.description}
-                      </div>
+                      <div className="text-sm text-gray-500">{task.description}</div>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -233,9 +236,7 @@ export function TasksDataTable() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Title *
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Title *</label>
             <input
               type="text"
               value={formData.title}
@@ -246,9 +247,7 @@ export function TasksDataTable() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Description
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Description</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -259,9 +258,7 @@ export function TasksDataTable() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Priority
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Priority</label>
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value as Task['priority'] })}
@@ -274,9 +271,7 @@ export function TasksDataTable() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Status
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Status</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as Task['status'] })}
@@ -292,9 +287,7 @@ export function TasksDataTable() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Due Date
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Due Date</label>
               <input
                 type="date"
                 value={formData.due_date}
@@ -304,9 +297,7 @@ export function TasksDataTable() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Assigned To
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Assigned To</label>
               <input
                 type="text"
                 value={formData.assigned_to}

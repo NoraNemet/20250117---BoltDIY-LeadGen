@@ -113,6 +113,11 @@ export function useTasks() {
   const createTask = async (taskInput: TaskInput) => {
     if (!user) throw new Error('User must be authenticated');
 
+    // Add input validation
+    if (!taskInput.title.trim()) {
+      throw new Error('Task title is required');
+    }
+
     const tempTask: Task = {
       ...taskInput,
       id: `temp-${Date.now()}`,
@@ -121,9 +126,15 @@ export function useTasks() {
       updated_at: new Date().toISOString(),
     } as Task;
 
+    // Optimistic UI update
     setTasks((current) => [tempTask, ...current]);
 
     try {
+      console.log('Creating task with payload:', {
+        ...taskInput,
+        created_by: user.id,
+      });
+
       const { data, error } = await supabase
         .from('tasks')
         .insert([
@@ -135,20 +146,30 @@ export function useTasks() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
 
+      console.log('Task created successfully:', data);
       setTasks((current) => current.map((task) => (task.id === tempTask.id ? data : task)));
       return data;
     } catch (err) {
+      console.error('Failed to create task:', err);
+      // Rollback optimistic update
       setTasks((current) => current.filter((task) => task.id !== tempTask.id));
-      throw err instanceof Error ? new Error(`Error creating task: ${err.message}`) : new Error('Failed to create task');
+      throw err instanceof Error 
+        ? new Error(`Error creating task: ${err.message}`) 
+        : new Error('Failed to create task');
     }
   };
 
   const updateTask = async (id: string, updates: Partial<TaskInput>) => {
     try {
       setTasks((current) =>
-        current.map((task) => (task.id === id ? { ...task, ...updates, updated_at: new Date().toISOString() } : task))
+        current.map((task) =>
+          task.id === id ? { ...task, ...updates, updated_at: new Date().toISOString() } : task
+        )
       );
 
       const { data, error } = await supabase

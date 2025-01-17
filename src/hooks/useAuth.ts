@@ -1,58 +1,51 @@
 import { useEffect, useState } from 'react';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-}
-
-// Mock user data
-const mockUser: User = {
-  id: '1',
-  email: 'demo@example.com',
-  name: 'Demo User'
-};
+import { supabase } from '../lib/supabase';
+import type { User } from '@supabase/supabase-js';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate initial auth check
-    const checkAuth = () => {
-      const isLoggedIn = localStorage.getItem('isLoggedIn');
-      if (isLoggedIn === 'true') {
-        setUser(mockUser);
-      }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       setLoading(false);
-    };
+    });
 
-    checkAuth();
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Mock login logic
-    if (email && password) {
-      localStorage.setItem('isLoggedIn', 'true');
-      setUser(mockUser);
-      return { error: null };
-    }
-    return { error: new Error('Invalid credentials') };
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    return { error };
   };
 
   const logout = async () => {
-    localStorage.removeItem('isLoggedIn');
-    setUser(null);
+    const { error } = await supabase.auth.signOut();
+    return { error };
   };
 
   const signUp = async (email: string, password: string, name: string) => {
-    // Mock signup logic
-    if (email && password && name) {
-      localStorage.setItem('isLoggedIn', 'true');
-      setUser({ ...mockUser, email, name });
-      return { error: null };
-    }
-    return { error: new Error('Invalid signup data') };
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name
+        }
+      }
+    });
+    return { error };
   };
 
   return { user, loading, login, logout, signUp };
